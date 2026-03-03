@@ -8,7 +8,7 @@
  * 4. Public key → Bitcoin address derivation
  */
 
-import * as secp256k1 from '@noble/secp256k1';
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { ripemd160 } from '@noble/hashes/legacy.js';
 import { hash as starkHash } from 'starknet';
@@ -58,7 +58,7 @@ export interface ParsedSignature {
   r: bigint;
   s: bigint;
   recoveryFlag: number;  // 0 or 1
-  yParity: boolean;      // for Starknet contract
+  yParity: boolean;      // for Starknet contract (true = odd y)
 }
 
 /**
@@ -75,29 +75,25 @@ export function parseSignature(base64Sig: string): ParsedSignature {
   let recoveryFlag: number;
 
   if (header >= 27 && header <= 30) {
-    // Uncompressed
     recoveryFlag = header - 27;
   } else if (header >= 31 && header <= 34) {
-    // Compressed (P2PKH)
     recoveryFlag = header - 31;
   } else if (header >= 35 && header <= 38) {
-    // Segwit P2SH-P2WPKH
     recoveryFlag = header - 35;
   } else if (header >= 39 && header <= 42) {
-    // Segwit Bech32
     recoveryFlag = header - 39;
   } else {
     throw new Error(`Unknown signature header: ${header}`);
   }
 
-  const r = BigInt('0x' + Array.from(raw.slice(1, 33)).map(b => b.toString(16).padStart(2, '0')).join(''));
-  const s = BigInt('0x' + Array.from(raw.slice(33, 65)).map(b => b.toString(16).padStart(2, '0')).join(''));
+  const r = BigInt('0x' + toHex(raw.slice(1, 33)));
+  const s = BigInt('0x' + toHex(raw.slice(33, 65)));
 
   return {
     r,
     s,
-    recoveryFlag: recoveryFlag % 2,  // 0 or 1
-    yParity: (recoveryFlag % 2) === 0,  // Starknet convention
+    recoveryFlag: recoveryFlag % 2,
+    yParity: (recoveryFlag % 2) === 1,
   };
 }
 
@@ -105,36 +101,25 @@ export function parseSignature(base64Sig: string): ParsedSignature {
 
 /**
  * Recover the public key from a Bitcoin signed message
+ * Uses @noble/curves/secp256k1 Signature class with proper recovery
  */
 export function recoverPublicKey(
   msgHash: Uint8Array,
   sig: ParsedSignature,
 ): { x: bigint; y: bigint; compressed: Uint8Array; uncompressed: Uint8Array } {
-  // Build 65-byte recovered signature: r(32) + s(32) + recovery(1)
-  const rBytes = bigintToBytes(sig.r, 32);
-  const sBytes = bigintToBytes(sig.s, 32);
-  const recSig = new Uint8Array(65);
-  recSig.set(rBytes, 0);
-  recSig.set(sBytes, 32);
-  recSig[64] = sig.recoveryFlag;
+  // Create Signature object with recovery bit
+  const signature = new secp256k1.Signature(sig.r, sig.s).addRecoveryBit(sig.recoveryFlag);
 
-  const rawPub = secp256k1.recoverPublicKey(recSig, msgHash, { format: 'recovered' });
-  const uncompressed = rawPub;
-  const x = BigInt('0x' + toHex(uncompressed.slice(1, 33)));
-  const y = BigInt('0x' + toHex(uncompressed.slice(33, 65)));
+  // Recover public key point
+  const point = signature.recoverPublicKey(msgHash);
 
-  const prefix = (y % 2n === 0n) ? 0x02 : 0x03;
-  const compressed = new Uint8Array(33);
-  compressed[0] = prefix;
-  compressed.set(uncompressed.slice(1, 33), 1);
+  const compressed = point.toRawBytes(true);   // 33 bytes
+  const uncompressed = point.toRawBytes(false); // 65 bytes
 
-  return { x, y, compressed, uncompressed };
+  return { x: point.x, y: point.y, compressed, uncompressed };
 }
 
-function bigintToBytes(n: bigint, len: number): Uint8Array {
-  const hex = n.toString(16).padStart(len * 2, '0');
-  return new Uint8Array(hex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
-}
+// ─── Helpers ───
 
 function toHex(arr: Uint8Array): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -157,10 +142,6 @@ export function pubkeyToP2PKH(compressedPubkey: Uint8Array, testnet = false): st
   return base58Check(payload);
 }
 
-/**
- * Derive P2WPKH (bech32) address from compressed public key  
- * (simplified — returns hash160 for comparison purposes)
- */
 export function pubkeyToHash160(compressedPubkey: Uint8Array): Uint8Array {
   return ripemd160(sha256(compressedPubkey));
 }
@@ -174,7 +155,6 @@ function base58Check(payload: Uint8Array): string {
   data.set(payload, 0);
   data.set(checksum, payload.length);
 
-  // Convert to base58
   let num = 0n;
   for (const byte of data) num = num * 256n + BigInt(byte);
 
@@ -185,7 +165,6 @@ function base58Check(payload: Uint8Array): string {
     num = num / 58n;
   }
 
-  // Leading zeros
   for (const byte of data) {
     if (byte !== 0) break;
     result = '1' + result;
@@ -198,7 +177,7 @@ function base58Check(payload: Uint8Array): string {
 
 /**
  * Compute Poseidon hash of public key coordinates (for on-chain comparison)
- * Matches the Cairo contract's hash computation
+ * Matches the Cairo contract: PoseidonTrait::new().update(x.low).update(x.high).update(y.low).update(y.high).finalize()
  */
 export function pubkeyToPoseidonHash(x: bigint, y: bigint): string {
   const xLow = x & ((1n << 128n) - 1n);
@@ -237,15 +216,15 @@ export function getBracket(btcBalance: number): typeof BRACKETS[0] {
 
 export interface ProofData {
   message: string;
-  msgHash: string;          // u256 hex
-  sigR: string;             // u256 hex
-  sigS: string;             // u256 hex
+  msgHash: string;
+  sigR: string;
+  sigS: string;
   yParity: boolean;
-  pubkeyX: string;          // u256 hex
-  pubkeyY: string;          // u256 hex
-  pubkeyHash: string;       // felt252 hex (Poseidon)
-  btcAddress: string;       // P2PKH address
-  bracket: number;          // 0-4
+  pubkeyX: string;
+  pubkeyY: string;
+  pubkeyHash: string;
+  btcAddress: string;
+  bracket: number;
   bracketName: string;
   bracketEmoji: string;
 }

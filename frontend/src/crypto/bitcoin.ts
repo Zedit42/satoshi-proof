@@ -4,8 +4,25 @@
 
 import * as secp256k1 from '@noble/secp256k1';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { hmac } from '@noble/hashes/hmac.js';
 import { ripemd160 } from '@noble/hashes/legacy.js';
 import { hash as starkHash } from 'starknet';
+
+// Setup noble/secp256k1 v3 hashes
+if (!(secp256k1.hashes as any).sha256) {
+  (secp256k1.hashes as any).sha256 = (...msgs: Uint8Array[]) => {
+    const total = msgs.reduce((a, m) => a + m.length, 0);
+    const buf = new Uint8Array(total);
+    let off = 0;
+    for (const m of msgs) { buf.set(m, off); off += m.length; }
+    return sha256(buf);
+  };
+  (secp256k1.hashes as any).hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
+    const h = hmac.create(sha256 as any, key);
+    for (const m of msgs) h.update(m);
+    return h.digest();
+  };
+}
 
 function varintBuf(n: number): Uint8Array {
   if (n < 0xfd) return new Uint8Array([n]);
@@ -47,30 +64,24 @@ export function parseSignature(base64Sig: string): ParsedSig {
     r: BigInt('0x' + toHex(raw.slice(1, 33))),
     s: BigInt('0x' + toHex(raw.slice(33, 65))),
     recoveryFlag: rf % 2,
-    yParity: (rf % 2) === 0,
+    yParity: (rf % 2) === 1,  // Starknet: true = odd y
   };
 }
 
 export function recoverPubKey(msgHash: Uint8Array, sig: ParsedSig) {
-  // Build 65-byte "recovered" signature: r(32) + s(32) + recovery(1)
+  // Build 65-byte "recovered" signature: recovery(1) + r(32) + s(32)
   const rBytes = bigintToBytes(sig.r, 32);
   const sBytes = bigintToBytes(sig.s, 32);
   const recSig = new Uint8Array(65);
-  recSig.set(rBytes, 0);
-  recSig.set(sBytes, 32);
-  recSig[64] = sig.recoveryFlag;
+  recSig[0] = sig.recoveryFlag;
+  recSig.set(rBytes, 1);
+  recSig.set(sBytes, 33);
 
-  const rawPub = secp256k1.recoverPublicKey(recSig, msgHash, { prehash: false });
-  // rawPub is 65 bytes (04 + x + y) for uncompressed
-  const uncompressed = rawPub.length === 65 ? rawPub : (() => { throw new Error('Unexpected format'); })();
+  const compressed = secp256k1.recoverPublicKey(recSig, msgHash);
+  const point = secp256k1.Point.fromBytes(compressed);
+  const uncompressed = point.toBytes(false); // 65 bytes: 04 + x + y
   const x = BigInt('0x' + toHex(uncompressed.slice(1, 33)));
   const y = BigInt('0x' + toHex(uncompressed.slice(33, 65)));
-
-  // Compressed
-  const prefix = (y % 2n === 0n) ? 0x02 : 0x03;
-  const compressed = new Uint8Array(33);
-  compressed[0] = prefix;
-  compressed.set(uncompressed.slice(1, 33), 1);
 
   return { x, y, compressed, uncompressed };
 }
