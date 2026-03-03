@@ -1,0 +1,9 @@
+{
+  "network": "sepolia",
+  "verifier_class_hash": "0x1d01e37e7d3a46812588aa263d9df61ea795a9142dbcdd34876e8f7c08c2ab3",
+  "registry_class_hash": "0x1467c6073f6fab5dc272a1a950f4d7c327ba5d29f808eda41437a4477f26e4b",
+  "sbt_class_hash": "0x534176b6c88ca3d11eefaef867d34fcb24729545459936da17102ebb882fe59",
+  "registry_address": "0x067c5e7cb777848f97d7f2eeaffe011fa1086390f1eb713277fc6311fe0d7f11",
+  "sbt_address": "0x0797278852c9a390b4a4e37b7eaf3aa5e34956447ec2cdf73c746888407cd86a",
+  "deployer": "0x044e59e0dd3cec8fb232e3060ffceffbe383d474955c6499b57376e55d289ff5"
+}
