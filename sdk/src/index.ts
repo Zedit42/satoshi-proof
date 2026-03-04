@@ -16,6 +16,8 @@ export {
   parseSignature,
   recoverPublicKey,
   pubkeyToP2PKH,
+  pubkeyToP2WPKH,
+  pubkeyToAllAddresses,
   pubkeyToHash160,
   pubkeyToPoseidonHash,
   

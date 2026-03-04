@@ -1,5 +1,5 @@
 {
-  "name": "@satoshi-proof/sdk",
+  "name": "satoshi-proof-sdk",
   "version": "1.0.0",
   "description": "Bitcoin signature verification and proof generation SDK for Starknet - implements BIP-137 message signing with Poseidon hashing",
   "main": "dist/index.js",
