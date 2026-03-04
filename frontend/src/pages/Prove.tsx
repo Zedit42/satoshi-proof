@@ -33,7 +33,6 @@ export default function Prove({ wallet, connectWallet }: Props) {
   const [proofData, setProofData] = useState<any>(null);
   const [txHash, setTxHash] = useState('');
   const [copied, setCopied] = useState(false);
-  const [expiryDays, setExpiryDays] = useState(30);
 
   const copyMessage = () => {
     navigator.clipboard.writeText(message);
@@ -151,7 +150,6 @@ export default function Prove({ wallet, connectWallet }: Props) {
           proofData.yParity ? '1' : '0',
           proofData.pubkeyHash,
           bracket.id.toString(),
-          expiryDays.toString(),
         ],
       }]);
 
@@ -258,19 +256,6 @@ export default function Prove({ wallet, connectWallet }: Props) {
                   </div>
                 )}
               </div>
-            </div>
-
-            <div className="expiry-selector">
-              <span className="label">⏰ Proof Expiry</span>
-              <select value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value))}>
-                <option value={7}>7 days</option>
-                <option value={14}>14 days</option>
-                <option value={30}>30 days (default)</option>
-                <option value={90}>90 days</option>
-                <option value={180}>180 days</option>
-                <option value={365}>365 days</option>
-              </select>
-              <p className="note">After expiry, you'll need to re-prove your ownership.</p>
             </div>
 
             <div className="privacy-note">

@@ -9,6 +9,9 @@
 /// 6. If valid → stores proof + emits event
 ///
 /// Brackets: 0=Shrimp(<1), 1=Crab(1-10), 2=Fish(10-50), 3=Shark(50-100), 4=Whale(100+)
+///
+/// Expiry: Proofs are permanent. Applications decide freshness via max_age_seconds
+/// in has_valid_proof_with_age(). Default has_valid_proof() has no age limit.
 
 use starknet::ContractAddress;
 
@@ -20,12 +23,19 @@ pub trait IProofRegistry<TContractState> {
         sig_r: u256,
         sig_s: u256,
         y_parity: bool,
-        btc_pubkey_hash: felt252,  // hash of the BTC public key (privacy: no raw pubkey stored)
-        bracket: u8,               // 0-4
-        expiry_days: u64,          // proof validity in days (0 = 30 days default)
+        btc_pubkey_hash: felt252,
+        bracket: u8,
     );
-    fn get_proof(self: @TContractState, owner: ContractAddress) -> (felt252, u8, u64, u64, bool);
+    fn get_proof(self: @TContractState, owner: ContractAddress) -> (felt252, u8, u64, bool);
     fn has_valid_proof(self: @TContractState, owner: ContractAddress, min_bracket: u8) -> bool;
+    /// Applications call this to enforce their own freshness requirements
+    /// max_age_seconds: 0 = no limit, 2592000 = 30 days, etc.
+    fn has_valid_proof_with_age(
+        self: @TContractState,
+        owner: ContractAddress,
+        min_bracket: u8,
+        max_age_seconds: u64,
+    ) -> bool;
     fn get_proof_count(self: @TContractState) -> u64;
     fn revoke_proof(ref self: TContractState);
 }
@@ -47,14 +57,11 @@ pub mod ProofRegistry {
 
     #[storage]
     struct Storage {
-        // owner → proof data
         proof_pubkey_hash: Map<ContractAddress, felt252>,
         proof_bracket: Map<ContractAddress, u8>,
         proof_timestamp: Map<ContractAddress, u64>,
         proof_valid: Map<ContractAddress, bool>,
-        proof_expires_at: Map<ContractAddress, u64>,
         proof_count: u64,
-        // replay protection: msg_hash → used
         used_msg_hashes: Map<u256, bool>,
     }
 
@@ -72,7 +79,6 @@ pub mod ProofRegistry {
         pub btc_pubkey_hash: felt252,
         pub bracket: u8,
         pub timestamp: u64,
-        pub expires_at: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -91,25 +97,16 @@ pub mod ProofRegistry {
             y_parity: bool,
             btc_pubkey_hash: felt252,
             bracket: u8,
-            expiry_days: u64,
         ) {
             assert!(bracket <= 4, "Invalid bracket (0-4)");
-
-            // Expiry: 0 = default 30 days, max 365 days
-            let days = if expiry_days == 0 { 30_u64 } else { expiry_days };
-            assert!(days <= 365, "Max expiry is 365 days");
-
-            // 0. Check replay protection BEFORE verification
             assert!(!self.used_msg_hashes.read(msg_hash), "Signature already used");
 
-            // 1. Recover public key from signature
             let signature = Signature { r: sig_r, s: sig_s, y_parity };
             let recovered = recover_public_key::<Secp256k1Point>(msg_hash, signature)
                 .expect('Signature recovery failed');
 
             let (pub_x, pub_y) = recovered.get_coordinates().unwrap_syscall();
 
-            // 2. Hash recovered pubkey → compare with claimed hash
             let computed_hash = PoseidonTrait::new()
                 .update(pub_x.low.into())
                 .update(pub_x.high.into())
@@ -119,18 +116,14 @@ pub mod ProofRegistry {
 
             assert!(computed_hash == btc_pubkey_hash, "Pubkey hash mismatch");
 
-            // 3. Mark signature as used AFTER successful verification
             self.used_msg_hashes.write(msg_hash, true);
 
-            // 4. Store proof with expiry
             let caller = get_caller_address();
             let now = get_block_timestamp();
-            let expires_at = now + (days * 86400); // days → seconds
 
             self.proof_pubkey_hash.write(caller, btc_pubkey_hash);
             self.proof_bracket.write(caller, bracket);
             self.proof_timestamp.write(caller, now);
-            self.proof_expires_at.write(caller, expires_at);
             self.proof_valid.write(caller, true);
 
             let count = self.proof_count.read();
@@ -141,34 +134,43 @@ pub mod ProofRegistry {
                 btc_pubkey_hash,
                 bracket,
                 timestamp: now,
-                expires_at,
             });
         }
 
-        fn get_proof(self: @ContractState, owner: ContractAddress) -> (felt252, u8, u64, u64, bool) {
-            let is_valid = self.proof_valid.read(owner);
-            let expires_at = self.proof_expires_at.read(owner);
-            let now = get_block_timestamp();
-            // Auto-expire: if past expiry, treat as invalid
-            let effective_valid = is_valid && (expires_at == 0 || now < expires_at);
-
+        fn get_proof(self: @ContractState, owner: ContractAddress) -> (felt252, u8, u64, bool) {
             (
                 self.proof_pubkey_hash.read(owner),
                 self.proof_bracket.read(owner),
                 self.proof_timestamp.read(owner),
-                expires_at,
-                effective_valid,
+                self.proof_valid.read(owner),
             )
         }
 
         fn has_valid_proof(self: @ContractState, owner: ContractAddress, min_bracket: u8) -> bool {
             let is_valid = self.proof_valid.read(owner);
             let bracket = self.proof_bracket.read(owner);
-            let expires_at = self.proof_expires_at.read(owner);
+            is_valid && bracket >= min_bracket
+        }
+
+        fn has_valid_proof_with_age(
+            self: @ContractState,
+            owner: ContractAddress,
+            min_bracket: u8,
+            max_age_seconds: u64,
+        ) -> bool {
+            let is_valid = self.proof_valid.read(owner);
+            let bracket = self.proof_bracket.read(owner);
+            if !is_valid || bracket < min_bracket {
+                return false;
+            }
+            // 0 = no age limit
+            if max_age_seconds == 0 {
+                return true;
+            }
+            let timestamp = self.proof_timestamp.read(owner);
             let now = get_block_timestamp();
-            // Check expiry
-            let not_expired = expires_at == 0 || now < expires_at;
-            is_valid && not_expired && bracket >= min_bracket
+            let age = now - timestamp;
+            age <= max_age_seconds
         }
 
         fn get_proof_count(self: @ContractState) -> u64 {

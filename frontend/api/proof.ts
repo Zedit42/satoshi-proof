@@ -29,7 +29,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // get_proof(owner) → (pubkey_hash: felt252, bracket: u8, timestamp: u64, expires_at: u64, valid: bool)
+    // Optional: max_age parameter (e.g. "30d", "7d", "90d") — default: no limit
+    const maxAgeParam = req.query.max_age as string | undefined;
+    let maxAgeSeconds = 0; // 0 = no limit
+    if (maxAgeParam) {
+      const match = maxAgeParam.match(/^(\d+)d$/);
+      if (match) {
+        maxAgeSeconds = parseInt(match[1]) * 86400;
+      }
+    }
+
+    // get_proof(owner) → (pubkey_hash: felt252, bracket: u8, timestamp: u64, valid: bool)
     const result = await PROVIDER.callContract({
       contractAddress: REGISTRY_ADDRESS,
       entrypoint: 'get_proof',
@@ -39,14 +49,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pubkeyHash = result[0];
     const bracket = Number(result[1]);
     const timestamp = Number(BigInt(result[2]));
-    const expiresAt = Number(BigInt(result[3]));
-    const valid = result[4] !== '0x0';
+    const valid = result[3] !== '0x0';
 
     if (!valid) {
       return res.status(200).json({
         address,
         hasProof: false,
         message: 'No verified Bitcoin ownership proof found for this address.',
+      });
+    }
+
+    // Check age if max_age was specified
+    const proofAgeDays = Math.floor((Date.now() / 1000 - timestamp) / 86400);
+    const expired = maxAgeSeconds > 0 && (Date.now() / 1000 - timestamp) > maxAgeSeconds;
+
+    if (expired) {
+      return res.status(200).json({
+        address,
+        hasProof: true,
+        expired: true,
+        proofAgeDays,
+        message: `Proof exists but is older than ${maxAgeParam}. User should re-prove.`,
       });
     }
 
@@ -76,9 +99,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       proofTimestamp: timestamp,
       proofDate: new Date(timestamp * 1000).toISOString(),
-      expiresAt,
-      expiresDate: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
-      expired: expiresAt > 0 && Date.now() / 1000 > expiresAt,
+      proofAgeDays,
+      expired: false,
       pubkeyHash,
       stats: { totalProofs },
       contract: REGISTRY_ADDRESS,
