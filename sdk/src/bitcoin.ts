@@ -279,7 +279,15 @@ export function pubkeyToPoseidonHash(x: bigint, y: bigint, salt?: string): strin
  */
 export function generateSalt(): string {
   const bytes = new Uint8Array(31); // felt252 max ~31 bytes
-  crypto.getRandomValues(bytes);
+  // Works in both Node.js and browser
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    // Node.js fallback
+    const { randomBytes } = require('crypto');
+    const buf = randomBytes(31);
+    bytes.set(buf);
+  }
   return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 

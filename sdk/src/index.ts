@@ -20,6 +20,7 @@ export {
   pubkeyToAllAddresses,
   pubkeyToHash160,
   pubkeyToPoseidonHash,
+  generateSalt,
   
   // Types
   type ParsedSignature,

@@ -15,7 +15,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import {
   bitcoinMessageHash, hashToU256Hex, parseSignature,
   recoverPublicKey, pubkeyToP2PKH, pubkeyToPoseidonHash,
-  getBracket,
+  generateSalt, getBracket,
 } from './bitcoin.js';
 import { Account, RpcProvider } from 'starknet';
 
@@ -98,12 +98,14 @@ async function main() {
   const msgHashHex = hashToU256Hex(msgHash);
   const sigR = '0x' + sig.r.toString(16);
   const sigS = '0x' + sig.s.toString(16);
-  const poseidonHash = pubkeyToPoseidonHash(recovered.x, recovered.y);
+  const salt = generateSalt();
+  const poseidonHash = pubkeyToPoseidonHash(recovered.x, recovered.y, salt);
   const bracket = getBracket(0); // 0 BTC for test = Shrimp
 
   console.log('📦 Proof data:');
   console.log('  msgHash:', msgHashHex.slice(0, 20) + '...');
   console.log('  yParity:', sig.yParity);
+  console.log('  salt:', salt.slice(0, 20) + '...');
   console.log('  pubkeyHash:', poseidonHash.slice(0, 20) + '...');
   console.log('  bracket:', bracket.id, bracket.emoji, bracket.name);
   console.log();
@@ -122,7 +124,10 @@ async function main() {
       ...splitU256(sigS),
       sig.yParity ? '1' : '0',
       poseidonHash,
+      salt,
       bracket.id.toString(),
+      // ByteArray for encrypted_btc_addr (empty for test)
+      '0', '0', '0',
     ],
   }]);
 
