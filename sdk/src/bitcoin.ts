@@ -240,6 +240,7 @@ export interface ProofData {
   bracket: number;
   bracketName: string;
   bracketEmoji: string;
+  expiryDays: number;
 }
 
 /**
@@ -249,6 +250,7 @@ export function generateProof(
   message: string,
   base64Signature: string,
   btcBalance: number,
+  expiryDays: number = 30,
 ): ProofData {
   const msgHash = bitcoinMessageHash(message);
   const sig = parseSignature(base64Signature);
@@ -270,5 +272,6 @@ export function generateProof(
     bracket: bracket.id,
     bracketName: bracket.name,
     bracketEmoji: bracket.emoji,
+    expiryDays: expiryDays > 0 ? expiryDays : 30,
   };
 }

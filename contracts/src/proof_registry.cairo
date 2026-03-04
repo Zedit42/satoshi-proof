@@ -22,8 +22,9 @@ pub trait IProofRegistry<TContractState> {
         y_parity: bool,
         btc_pubkey_hash: felt252,  // hash of the BTC public key (privacy: no raw pubkey stored)
         bracket: u8,               // 0-4
+        expiry_days: u64,          // proof validity in days (0 = 30 days default)
     );
-    fn get_proof(self: @TContractState, owner: ContractAddress) -> (felt252, u8, u64, bool);
+    fn get_proof(self: @TContractState, owner: ContractAddress) -> (felt252, u8, u64, u64, bool);
     fn has_valid_proof(self: @TContractState, owner: ContractAddress, min_bracket: u8) -> bool;
     fn get_proof_count(self: @TContractState) -> u64;
     fn revoke_proof(ref self: TContractState);
@@ -51,6 +52,7 @@ pub mod ProofRegistry {
         proof_bracket: Map<ContractAddress, u8>,
         proof_timestamp: Map<ContractAddress, u64>,
         proof_valid: Map<ContractAddress, bool>,
+        proof_expires_at: Map<ContractAddress, u64>,
         proof_count: u64,
         // replay protection: msg_hash → used
         used_msg_hashes: Map<u256, bool>,
@@ -70,6 +72,7 @@ pub mod ProofRegistry {
         pub btc_pubkey_hash: felt252,
         pub bracket: u8,
         pub timestamp: u64,
+        pub expires_at: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -88,8 +91,13 @@ pub mod ProofRegistry {
             y_parity: bool,
             btc_pubkey_hash: felt252,
             bracket: u8,
+            expiry_days: u64,
         ) {
             assert!(bracket <= 4, "Invalid bracket (0-4)");
+
+            // Expiry: 0 = default 30 days, max 365 days
+            let days = if expiry_days == 0 { 30_u64 } else { expiry_days };
+            assert!(days <= 365, "Max expiry is 365 days");
 
             // 0. Check replay protection BEFORE verification
             assert!(!self.used_msg_hashes.read(msg_hash), "Signature already used");
@@ -102,7 +110,6 @@ pub mod ProofRegistry {
             let (pub_x, pub_y) = recovered.get_coordinates().unwrap_syscall();
 
             // 2. Hash recovered pubkey → compare with claimed hash
-            //    This proves the signer matches without storing raw pubkey
             let computed_hash = PoseidonTrait::new()
                 .update(pub_x.low.into())
                 .update(pub_x.high.into())
@@ -115,13 +122,15 @@ pub mod ProofRegistry {
             // 3. Mark signature as used AFTER successful verification
             self.used_msg_hashes.write(msg_hash, true);
 
-            // 4. Store proof
+            // 4. Store proof with expiry
             let caller = get_caller_address();
             let now = get_block_timestamp();
+            let expires_at = now + (days * 86400); // days → seconds
 
             self.proof_pubkey_hash.write(caller, btc_pubkey_hash);
             self.proof_bracket.write(caller, bracket);
             self.proof_timestamp.write(caller, now);
+            self.proof_expires_at.write(caller, expires_at);
             self.proof_valid.write(caller, true);
 
             let count = self.proof_count.read();
@@ -132,22 +141,34 @@ pub mod ProofRegistry {
                 btc_pubkey_hash,
                 bracket,
                 timestamp: now,
+                expires_at,
             });
         }
 
-        fn get_proof(self: @ContractState, owner: ContractAddress) -> (felt252, u8, u64, bool) {
+        fn get_proof(self: @ContractState, owner: ContractAddress) -> (felt252, u8, u64, u64, bool) {
+            let is_valid = self.proof_valid.read(owner);
+            let expires_at = self.proof_expires_at.read(owner);
+            let now = get_block_timestamp();
+            // Auto-expire: if past expiry, treat as invalid
+            let effective_valid = is_valid && (expires_at == 0 || now < expires_at);
+
             (
                 self.proof_pubkey_hash.read(owner),
                 self.proof_bracket.read(owner),
                 self.proof_timestamp.read(owner),
-                self.proof_valid.read(owner),
+                expires_at,
+                effective_valid,
             )
         }
 
         fn has_valid_proof(self: @ContractState, owner: ContractAddress, min_bracket: u8) -> bool {
             let is_valid = self.proof_valid.read(owner);
             let bracket = self.proof_bracket.read(owner);
-            is_valid && bracket >= min_bracket
+            let expires_at = self.proof_expires_at.read(owner);
+            let now = get_block_timestamp();
+            // Check expiry
+            let not_expired = expires_at == 0 || now < expires_at;
+            is_valid && not_expired && bracket >= min_bracket
         }
 
         fn get_proof_count(self: @ContractState) -> u64 {

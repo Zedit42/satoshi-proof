@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // get_proof(owner) → (pubkey_hash: felt252, bracket: u8, timestamp: u64, valid: bool)
+    // get_proof(owner) → (pubkey_hash: felt252, bracket: u8, timestamp: u64, expires_at: u64, valid: bool)
     const result = await PROVIDER.callContract({
       contractAddress: REGISTRY_ADDRESS,
       entrypoint: 'get_proof',
@@ -39,7 +39,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pubkeyHash = result[0];
     const bracket = Number(result[1]);
     const timestamp = Number(BigInt(result[2]));
-    const valid = result[3] !== '0x0';
+    const expiresAt = Number(BigInt(result[3]));
+    const valid = result[4] !== '0x0';
 
     if (!valid) {
       return res.status(200).json({
@@ -75,6 +76,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       proofTimestamp: timestamp,
       proofDate: new Date(timestamp * 1000).toISOString(),
+      expiresAt,
+      expiresDate: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
+      expired: expiresAt > 0 && Date.now() / 1000 > expiresAt,
       pubkeyHash,
       stats: { totalProofs },
       contract: REGISTRY_ADDRESS,
