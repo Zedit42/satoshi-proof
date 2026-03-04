@@ -152,6 +152,15 @@ export default function Prove({ wallet, connectWallet }: Props) {
         return [low, high];
       };
 
+      // Verify bracket matches actual balance before submitting
+      const verifyResp = await fetch(
+        `/api/verify-bracket?btcAddress=${encodeURIComponent(btcAddress)}&claimedBracket=${bracket.id}`
+      );
+      const verifyData = await verifyResp.json();
+      if (!verifyData.valid) {
+        throw new Error(`Balance verification failed. Your actual bracket is ${verifyData.actualBracket}, not ${bracket.id}.`);
+      }
+
       // Encrypt BTC address via API (key never leaves server)
       const encryptedAddr = await encryptBtcAddress(btcAddress);
 
