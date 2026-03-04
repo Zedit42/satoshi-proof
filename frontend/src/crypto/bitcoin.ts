@@ -104,6 +104,95 @@ export function pubkeyToP2PKH(compressed: Uint8Array, testnet = false): string {
   return base58Check(payload);
 }
 
+// SegWit P2WPKH address (bc1q...)
+export function pubkeyToP2WPKH(compressed: Uint8Array, testnet = false): string {
+  const hash160 = ripemd160(sha256(compressed));
+  const hrp = testnet ? 'tb' : 'bc';
+  return bech32Encode(hrp, 0, hash160);
+}
+
+// Derive all address formats from a compressed pubkey
+export function pubkeyToAllAddresses(compressed: Uint8Array): {
+  p2pkh: string; p2wpkh: string; p2shP2wpkh: string;
+} {
+  const hash160 = ripemd160(sha256(compressed));
+  
+  // P2PKH (1...)
+  const p2pkhPayload = new Uint8Array(21);
+  p2pkhPayload[0] = 0x00;
+  p2pkhPayload.set(hash160, 1);
+  const p2pkh = base58Check(p2pkhPayload);
+
+  // P2WPKH (bc1q...)
+  const p2wpkh = bech32Encode('bc', 0, hash160);
+
+  // P2SH-P2WPKH (3...)
+  const redeemScript = new Uint8Array(22);
+  redeemScript[0] = 0x00; redeemScript[1] = 0x14;
+  redeemScript.set(hash160, 2);
+  const scriptHash = ripemd160(sha256(redeemScript));
+  const p2shPayload = new Uint8Array(21);
+  p2shPayload[0] = 0x05;
+  p2shPayload.set(scriptHash, 1);
+  const p2shP2wpkh = base58Check(p2shPayload);
+
+  return { p2pkh, p2wpkh, p2shP2wpkh };
+}
+
+// Match an address against all formats derived from a pubkey
+export function addressMatchesPubkey(address: string, compressed: Uint8Array): boolean {
+  const all = pubkeyToAllAddresses(compressed);
+  return address === all.p2pkh || address === all.p2wpkh || address === all.p2shP2wpkh;
+}
+
+// Bech32 encoding for SegWit addresses
+function bech32Encode(hrp: string, witnessVersion: number, data: Uint8Array): string {
+  const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+  
+  // Convert to 5-bit groups
+  const converted = convertBits(data, 8, 5, true);
+  const values = [witnessVersion, ...converted];
+  
+  // Create checksum
+  const polymod = bech32Polymod(hrpExpand(hrp).concat(values).concat([0, 0, 0, 0, 0, 0])) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((polymod >> (5 * (5 - i))) & 31);
+  
+  return hrp + '1' + values.concat(checksum).map(v => CHARSET[v]).join('');
+}
+
+function convertBits(data: Uint8Array, fromBits: number, toBits: number, pad: boolean): number[] {
+  let acc = 0, bits = 0;
+  const ret: number[] = [];
+  const maxv = (1 << toBits) - 1;
+  for (const value of data) {
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) { bits -= toBits; ret.push((acc >> bits) & maxv); }
+  }
+  if (pad && bits > 0) ret.push((acc << (toBits - bits)) & maxv);
+  return ret;
+}
+
+function hrpExpand(hrp: string): number[] {
+  const ret: number[] = [];
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) >> 5);
+  ret.push(0);
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) & 31);
+  return ret;
+}
+
+function bech32Polymod(values: number[]): number {
+  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const b = chk >> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) if ((b >> i) & 1) chk ^= GEN[i];
+  }
+  return chk;
+}
+
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function base58Check(payload: Uint8Array): string {
   const cs = sha256(sha256(payload)).slice(0, 4);

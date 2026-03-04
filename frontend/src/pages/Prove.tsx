@@ -3,7 +3,7 @@ import type { WalletState } from '../App';
 import {
   bitcoinMessageHash, hashToU256Hex, parseSignature,
   recoverPubKey, pubkeyToP2PKH, pubkeyPoseidonHash,
-  getBracket, fetchBtcBalance, BRACKETS,
+  getBracket, fetchBtcBalance, BRACKETS, addressMatchesPubkey,
 } from '../crypto/bitcoin';
 import { CallData } from 'starknet';
 import WalletSelector, { type WalletType } from '../components/WalletSelector';
@@ -108,12 +108,13 @@ export default function Prove({ wallet, connectWallet }: Props) {
     const address = pubkeyToP2PKH(pubkey.compressed);
     const poseidonHash = pubkeyPoseidonHash(pubkey.x, pubkey.y);
 
-    // If expected address is provided (from wallet), verify it matches
-    if (expectedAddress && address !== expectedAddress) {
-      throw new Error('Signature address mismatch');
+    // If expected address is provided (from wallet), verify it matches any format
+    if (expectedAddress && !addressMatchesPubkey(expectedAddress, pubkey.compressed)) {
+      throw new Error('Signature address mismatch — recovered pubkey doesn\'t match wallet address');
     }
 
-    setBtcAddress(address);
+    // Use wallet's address if provided (preserves SegWit/Taproot format), otherwise P2PKH
+    setBtcAddress(expectedAddress || address);
     setProofData({
       msgHash: hashToU256Hex(msgHash),
       sigR: '0x' + parsedSig.r.toString(16),

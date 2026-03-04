@@ -146,6 +146,84 @@ export function pubkeyToHash160(compressedPubkey: Uint8Array): Uint8Array {
   return ripemd160(sha256(compressedPubkey));
 }
 
+/**
+ * Derive P2WPKH (SegWit) address from compressed public key (bc1q...)
+ */
+export function pubkeyToP2WPKH(compressedPubkey: Uint8Array, testnet = false): string {
+  const hash160 = ripemd160(sha256(compressedPubkey));
+  const hrp = testnet ? 'tb' : 'bc';
+  return bech32Encode(hrp, 0, hash160);
+}
+
+/**
+ * Derive all address formats from a compressed public key
+ */
+export function pubkeyToAllAddresses(compressedPubkey: Uint8Array): {
+  p2pkh: string; p2wpkh: string; p2shP2wpkh: string;
+} {
+  const hash160Val = ripemd160(sha256(compressedPubkey));
+  
+  const p2pkhPayload = new Uint8Array(21);
+  p2pkhPayload[0] = 0x00;
+  p2pkhPayload.set(hash160Val, 1);
+  const p2pkh = base58Check(p2pkhPayload);
+
+  const p2wpkh = bech32Encode('bc', 0, hash160Val);
+
+  const redeemScript = new Uint8Array(22);
+  redeemScript[0] = 0x00; redeemScript[1] = 0x14;
+  redeemScript.set(hash160Val, 2);
+  const scriptHash = ripemd160(sha256(redeemScript));
+  const p2shPayload = new Uint8Array(21);
+  p2shPayload[0] = 0x05;
+  p2shPayload.set(scriptHash, 1);
+  const p2shP2wpkh = base58Check(p2shPayload);
+
+  return { p2pkh, p2wpkh, p2shP2wpkh };
+}
+
+function bech32Encode(hrp: string, witnessVersion: number, data: Uint8Array): string {
+  const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+  const converted = convertBits(data, 8, 5, true);
+  const values = [witnessVersion, ...converted];
+  const polymod = bech32Polymod(hrpExpand(hrp).concat(values).concat([0, 0, 0, 0, 0, 0])) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((polymod >> (5 * (5 - i))) & 31);
+  return hrp + '1' + values.concat(checksum).map(v => CHARSET[v]).join('');
+}
+
+function convertBits(data: Uint8Array, fromBits: number, toBits: number, pad: boolean): number[] {
+  let acc = 0, bits = 0;
+  const ret: number[] = [];
+  const maxv = (1 << toBits) - 1;
+  for (const value of data) {
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) { bits -= toBits; ret.push((acc >> bits) & maxv); }
+  }
+  if (pad && bits > 0) ret.push((acc << (toBits - bits)) & maxv);
+  return ret;
+}
+
+function hrpExpand(hrp: string): number[] {
+  const ret: number[] = [];
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) >> 5);
+  ret.push(0);
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) & 31);
+  return ret;
+}
+
+function bech32Polymod(values: number[]): number {
+  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const b = chk >> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) if ((b >> i) & 1) chk ^= GEN[i];
+  }
+  return chk;
+}
+
 // Base58Check encoding
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
