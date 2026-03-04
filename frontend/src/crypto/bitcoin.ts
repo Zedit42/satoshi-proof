@@ -138,6 +138,10 @@ export function getBracket(btc: number) {
   return BRACKETS[0];
 }
 
+export function createProofMessage(contractAddress: string, nonce: number, chain = 'SN_SEPOLIA'): string {
+  return `Satoshi Proof v1 | Chain: ${chain} | Contract: ${contractAddress} | Nonce: ${nonce} | `;
+}
+
 export function fetchBtcBalance(address: string): Promise<number> {
   return fetch(`https://blockstream.info/api/address/${address}`)
     .then(r => r.json())

@@ -212,6 +212,19 @@ export function getBracket(btcBalance: number): typeof BRACKETS[0] {
   return BRACKETS[0];
 }
 
+// ─── Proof Message Format ───
+
+/**
+ * Generate proof message with nonce for replay protection
+ */
+export function createProofMessage(
+  contractAddress: string,
+  nonce: number,
+  chain: string = 'SN_SEPOLIA'
+): string {
+  return `Satoshi Proof v1 | Chain: ${chain} | Contract: ${contractAddress} | Nonce: ${nonce} | `;
+}
+
 // ─── Full Proof Generation ───
 
 export interface ProofData {

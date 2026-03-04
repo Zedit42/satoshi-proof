@@ -6,8 +6,12 @@
     "esModuleInterop": true,
     "strict": true,
     "outDir": "dist",
+    "declarationDir": "dist",
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["src"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/e2e-test.ts", "node_modules", "dist"]
 }

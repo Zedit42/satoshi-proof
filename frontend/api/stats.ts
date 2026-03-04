@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { RpcProvider } from 'starknet';
 
-const REGISTRY_ADDRESS = '0x067c5e7cb777848f97d7f2eeaffe011fa1086390f1eb713277fc6311fe0d7f11';
+const REGISTRY_ADDRESS = '0x0490029d0c2007f40a39eac70e5c728351568770248a6f29cfa42b7d9ce32c75';
 const SBT_ADDRESS = '0x0797278852c9a390b4a4e37b7eaf3aa5e34956447ec2cdf73c746888407cd86a';
 const PROVIDER = new RpcProvider({ nodeUrl: 'https://rpc.starknet-testnet.lava.build' });
 

@@ -1,15 +1,36 @@
 {
-  "name": "sdk",
+  "name": "@satoshi-proof/sdk",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Bitcoin signature verification and proof generation SDK for Starknet - implements BIP-137 message signing with Poseidon hashing",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsc",
     "test": "vitest run"
   },
-  "keywords": [],
+  "keywords": [
+    "bitcoin",
+    "signature",
+    "bip137",
+    "starknet",
+    "poseidon",
+    "proof",
+    "secp256k1",
+    "verification"
+  ],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "MIT",
   "dependencies": {
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
@@ -19,5 +40,13 @@
     "@types/node": "^25.3.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/satoshi-proof"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/satoshi-proof/issues"
+  },
+  "homepage": "https://github.com/yourusername/satoshi-proof#readme"
 }

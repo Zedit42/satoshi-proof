@@ -21,7 +21,7 @@ import { Account, RpcProvider } from 'starknet';
 
 // ─── Config ───
 const RPC_URL = 'https://rpc.starknet-testnet.lava.build';
-const REGISTRY = '0x067c5e7cb777848f97d7f2eeaffe011fa1086390f1eb713277fc6311fe0d7f11';
+const REGISTRY = '0x0490029d0c2007f40a39eac70e5c728351568770248a6f29cfa42b7d9ce32c75';
 const DEPLOYER_ADDR = '0x044e59e0dd3cec8fb232e3060ffceffbe383d474955c6499b57376e55d289ff5';
 const DEPLOYER_PK = process.env.STARKNET_PRIVATE_KEY || '';
 

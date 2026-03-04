@@ -52,6 +52,8 @@ pub mod ProofRegistry {
         proof_timestamp: Map<ContractAddress, u64>,
         proof_valid: Map<ContractAddress, bool>,
         proof_count: u64,
+        // replay protection: msg_hash → used
+        used_msg_hashes: Map<u256, bool>,
     }
 
     #[event]
@@ -89,6 +91,9 @@ pub mod ProofRegistry {
         ) {
             assert!(bracket <= 4, "Invalid bracket (0-4)");
 
+            // 0. Check replay protection BEFORE verification
+            assert!(!self.used_msg_hashes.read(msg_hash), "Signature already used");
+
             // 1. Recover public key from signature
             let signature = Signature { r: sig_r, s: sig_s, y_parity };
             let recovered = recover_public_key::<Secp256k1Point>(msg_hash, signature)
@@ -107,7 +112,10 @@ pub mod ProofRegistry {
 
             assert!(computed_hash == btc_pubkey_hash, "Pubkey hash mismatch");
 
-            // 3. Store proof
+            // 3. Mark signature as used AFTER successful verification
+            self.used_msg_hashes.write(msg_hash, true);
+
+            // 4. Store proof
             let caller = get_caller_address();
             let now = get_block_timestamp();
 

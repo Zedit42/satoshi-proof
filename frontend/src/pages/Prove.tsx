@@ -5,8 +5,11 @@ import {
   recoverPubKey, pubkeyToP2PKH, pubkeyPoseidonHash,
   getBracket, fetchBtcBalance, BRACKETS,
 } from '../crypto/bitcoin';
+import WalletSelector, { type WalletType } from '../components/WalletSelector';
+import { connectXverse, signWithXverse } from '../wallets/xverse';
+import { connectUnisat, signWithUnisat, ensureMainnet } from '../wallets/unisat';
 
-const REGISTRY_ADDRESS = '0x067c5e7cb777848f97d7f2eeaffe011fa1086390f1eb713277fc6311fe0d7f11';
+const REGISTRY_ADDRESS = '0x0490029d0c2007f40a39eac70e5c728351568770248a6f29cfa42b7d9ce32c75';
 const PROOF_MESSAGE = 'Satoshi Proof: I own this Bitcoin address. Timestamp: ';
 
 interface Props {
@@ -14,10 +17,11 @@ interface Props {
   connectWallet: () => Promise<void>;
 }
 
-type Step = 'sign' | 'verify' | 'balance' | 'submit' | 'done';
+type Step = 'select' | 'sign' | 'verify' | 'balance' | 'submit' | 'done';
 
 export default function Prove({ wallet, connectWallet }: Props) {
-  const [step, setStep] = useState<Step>('sign');
+  const [step, setStep] = useState<Step>('select');
+  const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [signature, setSignature] = useState('');
   const [error, setError] = useState('');
 
@@ -36,34 +40,82 @@ export default function Prove({ wallet, connectWallet }: Props) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleWalletSelect = async (walletType: WalletType) => {
+    setSelectedWallet(walletType);
+    setError('');
+
+    if (walletType === 'manual') {
+      // Manual flow: go to sign step
+      setStep('sign');
+      return;
+    }
+
+    // Auto-sign flow for Xverse/Unisat
+    try {
+      setStep('verify');
+      let address: string;
+      let sig: string;
+
+      if (walletType === 'xverse') {
+        // Connect and sign with Xverse
+        address = await connectXverse();
+        const result = await signWithXverse(message, address);
+        sig = result.signature;
+      } else if (walletType === 'unisat') {
+        // Connect and sign with Unisat
+        await ensureMainnet();
+        address = await connectUnisat();
+        const result = await signWithUnisat(message);
+        sig = result.signature;
+      } else {
+        throw new Error('Unknown wallet type');
+      }
+
+      // Verify signature
+      await verifySignatureData(sig, address);
+    } catch (err: any) {
+      setError(err.message || 'Wallet connection failed');
+      setStep('select');
+    }
+  };
+
   const verifySignature = async () => {
     setError('');
     try {
-      const msgHash = bitcoinMessageHash(message);
-      const sig = parseSignature(signature.trim());
-      const pubkey = recoverPubKey(msgHash, sig);
-      const address = pubkeyToP2PKH(pubkey.compressed);
-      const poseidonHash = pubkeyPoseidonHash(pubkey.x, pubkey.y);
-
-      setBtcAddress(address);
-      setProofData({
-        msgHash: hashToU256Hex(msgHash),
-        sigR: '0x' + sig.r.toString(16),
-        sigS: '0x' + sig.s.toString(16),
-        yParity: sig.yParity,
-        pubkeyHash: poseidonHash,
-      });
-
-      setStep('balance');
-
-      // Fetch balance
-      const bal = await fetchBtcBalance(address);
-      setBtcBalance(bal);
-      setBracket(getBracket(bal));
-
+      await verifySignatureData(signature.trim());
     } catch (err: any) {
       setError(err.message || 'Invalid signature');
+      setStep('sign');
     }
+  };
+
+  const verifySignatureData = async (sig: string, expectedAddress?: string) => {
+    const msgHash = bitcoinMessageHash(message);
+    const parsedSig = parseSignature(sig);
+    const pubkey = recoverPubKey(msgHash, parsedSig);
+    const address = pubkeyToP2PKH(pubkey.compressed);
+    const poseidonHash = pubkeyPoseidonHash(pubkey.x, pubkey.y);
+
+    // If expected address is provided (from wallet), verify it matches
+    if (expectedAddress && address !== expectedAddress) {
+      throw new Error('Signature address mismatch');
+    }
+
+    setBtcAddress(address);
+    setProofData({
+      msgHash: hashToU256Hex(msgHash),
+      sigR: '0x' + parsedSig.r.toString(16),
+      sigS: '0x' + parsedSig.s.toString(16),
+      yParity: parsedSig.yParity,
+      pubkeyHash: poseidonHash,
+    });
+
+    setStep('balance');
+
+    // Fetch balance
+    const bal = await fetchBtcBalance(address);
+    setBtcBalance(bal);
+    setBracket(getBracket(bal));
   };
 
   const submitProof = async () => {
@@ -109,13 +161,31 @@ export default function Prove({ wallet, connectWallet }: Props) {
     }
   };
 
+  const resetFlow = () => {
+    setStep('select');
+    setSelectedWallet(null);
+    setSignature('');
+    setError('');
+    setBtcAddress('');
+    setBtcBalance(null);
+    setBracket(null);
+    setProofData(null);
+  };
+
   return (
     <div className="page">
       <div className="card">
         <h2>Prove Bitcoin Ownership</h2>
 
-        {/* Step 1: Sign */}
-        {step === 'sign' && (
+        {/* Step 0: Wallet Selection */}
+        {step === 'select' && (
+          <>
+            <WalletSelector onSelect={handleWalletSelect} />
+          </>
+        )}
+
+        {/* Step 1: Manual Sign */}
+        {step === 'sign' && selectedWallet === 'manual' && (
           <>
             <p>Copy the message below and sign it with your Bitcoin wallet.</p>
             <div className="message-box">
@@ -147,6 +217,9 @@ export default function Prove({ wallet, connectWallet }: Props) {
             >
               Verify Signature →
             </button>
+            <button onClick={resetFlow} className="secondary-btn">
+              ← Back to Wallet Selection
+            </button>
           </>
         )}
 
@@ -154,7 +227,11 @@ export default function Prove({ wallet, connectWallet }: Props) {
         {step === 'verify' && (
           <div className="status-box">
             <div className="spinner" />
-            <p>Verifying signature & recovering public key...</p>
+            <p>
+              {selectedWallet === 'manual'
+                ? 'Verifying signature & recovering public key...'
+                : `Connecting to ${selectedWallet === 'xverse' ? 'Xverse' : 'Unisat'}...`}
+            </p>
           </div>
         )}
 
@@ -189,8 +266,8 @@ export default function Prove({ wallet, connectWallet }: Props) {
             <button onClick={submitProof} className="primary-btn">
               {wallet.isConnected ? `Submit Proof as ${bracket?.emoji} ${bracket?.name}` : 'Connect Wallet & Submit'}
             </button>
-            <button onClick={() => { setStep('sign'); setError(''); }} className="secondary-btn">
-              ← Back
+            <button onClick={resetFlow} className="secondary-btn">
+              ← Start Over
             </button>
           </>
         )}
@@ -227,13 +304,16 @@ export default function Prove({ wallet, connectWallet }: Props) {
                 <span className="sbt-sub">Satoshi Proof SBT</span>
               </div>
             </div>
+            <button onClick={resetFlow} className="secondary-btn" style={{ marginTop: '1rem' }}>
+              Create Another Proof
+            </button>
           </div>
         )}
 
         {error && (
           <div className="error-box">
             <p>❌ {error}</p>
-            <button onClick={() => { setError(''); setStep('sign'); }} className="secondary-btn">
+            <button onClick={resetFlow} className="secondary-btn">
               Try Again
             </button>
           </div>
