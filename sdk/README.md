@@ -1,4 +1,4 @@
-# @satoshi-proof/sdk
+# satoshi-proof-sdk
 
 **Bitcoin signature verification and proof generation SDK for Starknet**
 
@@ -9,15 +9,15 @@ This SDK implements BIP-137 Bitcoin signed message verification with Poseidon ha
 ## Installation
 
 ```bash
-npm install @satoshi-proof/sdk
+npm install satoshi-proof-sdk
 ```
 
 ```bash
-yarn add @satoshi-proof/sdk
+yarn add satoshi-proof-sdk
 ```
 
 ```bash
-pnpm add @satoshi-proof/sdk
+pnpm add satoshi-proof-sdk
 ```
 
 ---
@@ -25,7 +25,7 @@ pnpm add @satoshi-proof/sdk
 ## Quick Start
 
 ```typescript
-import { generateProof } from '@satoshi-proof/sdk';
+import { generateProof } from 'satoshi-proof-sdk';
 
 // User signs a message with their Bitcoin wallet
 const message = "I own this Bitcoin address";
@@ -201,7 +201,7 @@ import {
   parseSignature, 
   recoverPublicKey, 
   pubkeyToP2PKH 
-} from '@satoshi-proof/sdk';
+} from 'satoshi-proof-sdk';
 
 const message = "Prove I own this address";
 const signature = "H8k3Qn..."; // From Bitcoin wallet
@@ -226,7 +226,7 @@ console.log(`Signer address: ${address}`);
 ### Example 2: Generate proof for Starknet contract
 
 ```typescript
-import { generateProof } from '@satoshi-proof/sdk';
+import { generateProof } from 'satoshi-proof-sdk';
 
 async function submitProof(message: string, signature: string, btcBalance: number) {
   // Generate proof
@@ -254,7 +254,7 @@ async function submitProof(message: string, signature: string, btcBalance: numbe
 ### Example 3: Batch verify multiple signatures
 
 ```typescript
-import { generateProof, getBracket, BRACKETS } from '@satoshi-proof/sdk';
+import { generateProof, getBracket, BRACKETS } from 'satoshi-proof-sdk';
 
 interface User {
   message: string;
@@ -348,7 +348,7 @@ MIT
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/yourusername/satoshi-proof](https://github.com/yourusername/satoshi-proof)
+Issues and PRs welcome at [github.com/Zedit42/satoshi-proof](https://github.com/Zedit42/satoshi-proof)
 
 ---
 

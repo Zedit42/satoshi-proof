@@ -1,6 +1,6 @@
 {
   "name": "satoshi-proof-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Bitcoin signature verification and proof generation SDK for Starknet - implements BIP-137 message signing with Poseidon hashing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
