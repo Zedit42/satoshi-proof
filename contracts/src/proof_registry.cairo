@@ -25,8 +25,10 @@ pub trait IProofRegistry<TContractState> {
         y_parity: bool,
         btc_pubkey_hash: felt252,
         bracket: u8,
+        encrypted_btc_addr: ByteArray,  // AES-encrypted BTC address (only API can decrypt)
     );
     fn get_proof(self: @TContractState, owner: ContractAddress) -> (felt252, u8, u64, bool);
+    fn get_encrypted_btc_addr(self: @TContractState, owner: ContractAddress) -> ByteArray;
     fn has_valid_proof(self: @TContractState, owner: ContractAddress, min_bracket: u8) -> bool;
     /// Applications call this to enforce their own freshness requirements
     /// max_age_seconds: 0 = no limit, 2592000 = 30 days, etc.
@@ -61,6 +63,7 @@ pub mod ProofRegistry {
         proof_bracket: Map<ContractAddress, u8>,
         proof_timestamp: Map<ContractAddress, u64>,
         proof_valid: Map<ContractAddress, bool>,
+        proof_encrypted_addr: Map<ContractAddress, ByteArray>,
         proof_count: u64,
         used_msg_hashes: Map<u256, bool>,
     }
@@ -97,6 +100,7 @@ pub mod ProofRegistry {
             y_parity: bool,
             btc_pubkey_hash: felt252,
             bracket: u8,
+            encrypted_btc_addr: ByteArray,
         ) {
             assert!(bracket <= 4, "Invalid bracket (0-4)");
             assert!(!self.used_msg_hashes.read(msg_hash), "Signature already used");
@@ -125,6 +129,7 @@ pub mod ProofRegistry {
             self.proof_bracket.write(caller, bracket);
             self.proof_timestamp.write(caller, now);
             self.proof_valid.write(caller, true);
+            self.proof_encrypted_addr.write(caller, encrypted_btc_addr);
 
             let count = self.proof_count.read();
             self.proof_count.write(count + 1);
@@ -171,6 +176,10 @@ pub mod ProofRegistry {
             let now = get_block_timestamp();
             let age = now - timestamp;
             age <= max_age_seconds
+        }
+
+        fn get_encrypted_btc_addr(self: @ContractState, owner: ContractAddress) -> ByteArray {
+            self.proof_encrypted_addr.read(owner)
         }
 
         fn get_proof_count(self: @ContractState) -> u64 {

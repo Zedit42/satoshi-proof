@@ -5,12 +5,29 @@ import {
   recoverPubKey, pubkeyToP2PKH, pubkeyPoseidonHash,
   getBracket, fetchBtcBalance, BRACKETS,
 } from '../crypto/bitcoin';
+import { CallData } from 'starknet';
 import WalletSelector, { type WalletType } from '../components/WalletSelector';
 import { connectXverse, signWithXverse } from '../wallets/xverse';
 import { connectUnisat, signWithUnisat, ensureMainnet } from '../wallets/unisat';
 
 const REGISTRY_ADDRESS = '0x0490029d0c2007f40a39eac70e5c728351568770248a6f29cfa42b7d9ce32c75';
 const PROOF_MESSAGE = 'Satoshi Proof: I own this Bitcoin address. Timestamp: ';
+
+// Public encryption key (only API has the private/symmetric key to decrypt)
+const ENCRYPTION_KEY_HEX = import.meta.env.VITE_ENCRYPTION_KEY || '';
+
+async function encryptBtcAddress(btcAddress: string): Promise<string> {
+  const keyBytes = Uint8Array.from(ENCRYPTION_KEY_HEX.match(/.{2}/g)!.map((b: string) => parseInt(b, 16)));
+  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(btcAddress);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+  // Format: base64(iv + ciphertext)
+  const combined = new Uint8Array(iv.length + new Uint8Array(ciphertext).length);
+  combined.set(iv);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
 
 interface Props {
   wallet: WalletState;
@@ -140,6 +157,14 @@ export default function Prove({ wallet, connectWallet }: Props) {
         return [low, high];
       };
 
+      // Encrypt BTC address for on-chain storage (only API can decrypt)
+      const encryptedAddr = ENCRYPTION_KEY_HEX
+        ? await encryptBtcAddress(btcAddress)
+        : '';
+
+      // ByteArray calldata: serialize as felt252 chunks
+      const byteArrayCalldata = CallData.compile({ encrypted_btc_addr: encryptedAddr });
+
       const tx = await sn.account.execute([{
         contractAddress: REGISTRY_ADDRESS,
         entrypoint: 'register_proof',
@@ -150,6 +175,7 @@ export default function Prove({ wallet, connectWallet }: Props) {
           proofData.yParity ? '1' : '0',
           proofData.pubkeyHash,
           bracket.id.toString(),
+          ...byteArrayCalldata,
         ],
       }]);
 
