@@ -4,6 +4,7 @@ import {
   bitcoinMessageHash, hashToU256Hex, parseSignature,
   recoverPubKey, pubkeyToP2PKH, pubkeyPoseidonHash,
   getBracket, fetchBtcBalance, BRACKETS, addressMatchesPubkey,
+  generateSalt,
 } from '../crypto/bitcoin';
 import { CallData } from 'starknet';
 import WalletSelector, { type WalletType } from '../components/WalletSelector';
@@ -115,12 +116,15 @@ export default function Prove({ wallet, connectWallet }: Props) {
 
     // Use wallet's address if provided (preserves SegWit/Taproot format), otherwise P2PKH
     setBtcAddress(expectedAddress || address);
+    const salt = generateSalt();
+    const saltedHash = pubkeyPoseidonHash(pubkey.x, pubkey.y, salt);
     setProofData({
       msgHash: hashToU256Hex(msgHash),
       sigR: '0x' + parsedSig.r.toString(16),
       sigS: '0x' + parsedSig.s.toString(16),
       yParity: parsedSig.yParity,
-      pubkeyHash: poseidonHash,
+      pubkeyHash: saltedHash,
+      salt,
     });
 
     setStep('balance');
@@ -177,6 +181,7 @@ export default function Prove({ wallet, connectWallet }: Props) {
           ...splitU256(proofData.sigS),
           proofData.yParity ? '1' : '0',
           proofData.pubkeyHash,
+          proofData.salt,
           bracket.id.toString(),
           ...byteArrayCalldata,
         ],

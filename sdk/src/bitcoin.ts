@@ -257,18 +257,30 @@ function base58Check(payload: Uint8Array): string {
  * Compute Poseidon hash of public key coordinates (for on-chain comparison)
  * Matches the Cairo contract: PoseidonTrait::new().update(x.low).update(x.high).update(y.low).update(y.high).finalize()
  */
-export function pubkeyToPoseidonHash(x: bigint, y: bigint): string {
+export function pubkeyToPoseidonHash(x: bigint, y: bigint, salt?: string): string {
   const xLow = x & ((1n << 128n) - 1n);
   const xHigh = x >> 128n;
   const yLow = y & ((1n << 128n) - 1n);
   const yHigh = y >> 128n;
 
-  return starkHash.computePoseidonHashOnElements([
+  const elements = [
     '0x' + xLow.toString(16),
     '0x' + xHigh.toString(16),
     '0x' + yLow.toString(16),
     '0x' + yHigh.toString(16),
-  ]);
+  ];
+  if (salt) elements.push(salt);
+
+  return starkHash.computePoseidonHashOnElements(elements);
+}
+
+/**
+ * Generate a random salt for Poseidon hash privacy
+ */
+export function generateSalt(): string {
+  const bytes = new Uint8Array(31); // felt252 max ~31 bytes
+  crypto.getRandomValues(bytes);
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ─── Bracket System ───

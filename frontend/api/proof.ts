@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { RpcProvider, CallData } from 'starknet';
 import { createDecipheriv } from 'crypto';
+import { applyRateLimit } from './_rateLimit.js';
 
 const ENCRYPTION_KEY = process.env.SATOSHI_PROOF_ENCRYPTION_KEY || ''; // 32-byte hex
 
@@ -41,6 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!applyRateLimit(req, res)) return;
 
   const { address } = req.query;
   if (!address || typeof address !== 'string') {

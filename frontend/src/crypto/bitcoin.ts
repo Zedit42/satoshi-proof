@@ -206,12 +206,20 @@ function base58Check(payload: Uint8Array): string {
   return r;
 }
 
-export function pubkeyPoseidonHash(x: bigint, y: bigint): string {
+export function pubkeyPoseidonHash(x: bigint, y: bigint, salt?: string): string {
   const mask = (1n << 128n) - 1n;
-  return starkHash.computePoseidonHashOnElements([
+  const elements = [
     '0x' + (x & mask).toString(16), '0x' + (x >> 128n).toString(16),
     '0x' + (y & mask).toString(16), '0x' + (y >> 128n).toString(16),
-  ]);
+  ];
+  if (salt) elements.push(salt);
+  return starkHash.computePoseidonHashOnElements(elements);
+}
+
+export function generateSalt(): string {
+  const bytes = new Uint8Array(31);
+  crypto.getRandomValues(bytes);
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export const BRACKETS = [
